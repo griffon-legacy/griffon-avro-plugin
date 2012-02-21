@@ -18,11 +18,10 @@
  * @author Andres Almiray
  */
 
-includeTargets << griffonScript('Init')
 includeTargets << griffonScript('_GriffonCompile')
 
-target(avro: 'Compile Avro sources') {
-    depends(checkVersion, classpath, parseArguments)
+target(name: 'avro', description: 'Compile Avro sources', prehook: null, posthook: null) {
+    depends(classpath)
     gensrcDir = "${projectWorkDir}/avro"
     gensrcDirPath = new File(gensrcDir)
     gensrcDirPath.mkdirs()
@@ -31,7 +30,7 @@ target(avro: 'Compile Avro sources') {
 
     avrosrc = "${basedir}/src/avro"
     avrosrcDir = new File(avrosrc)
-    if(avrosrcDir.exists() && avrosrcDir.list().size()) {
+    if(avrosrcDir.exists()) {
         compileAvroSources()
     } else {
         ant.echo(message: "[avro] No avro sources found at $avrosrc")
@@ -39,80 +38,71 @@ target(avro: 'Compile Avro sources') {
 }
 
 compileAvroSources = {
-    boolean uptodate1 = true
-    boolean uptodate2 = true
-    def skipIt = new RuntimeException()
-    try {
-        ant.fileset(dir: avrosrcDir, includes: "**/*.avpr").each { avrofile ->
-            File markerFile = new File(gensrcDir+File.separator+'gen-java', "." + (avrofile.toString() - avrosrc).substring(1))
-            if(!markerFile.exists() || avrofile.file.lastModified() > markerFile.lastModified()) throw skipIt
-        }
-    } catch(x) {
-       if(x == skipIt) uptodate1 = false
-       else throw x
-    }
-    try {
-        ant.fileset(dir: avrosrcDir, includes: "**/*.avsc").each { avrofile ->
-            File markerFile = new File(gensrcDir+File.separator+'gen-java', "." + (avrofile.toString() - avrosrc).substring(1))
-            if(!markerFile.exists() || avrofile.file.lastModified() > markerFile.lastModified()) throw skipIt
-        }
-    } catch(x) {
-       if(x == skipIt) uptodate2 = false
-       else throw x
-    }
-
-    if(uptodate1 && uptodate2) {
-       ant.echo(message: "[avro] Sources are up to date")
-       return
-    }
-
-    ant.echo(message: "[avro] Invoking Avro protocol+schema generators on $avrosrc")
-    ant.echo(message: "[avro] Generated sources will be placed in ${gensrcDirPath.absolutePath}")
+    boolean uptodate1 = checkSourcesUpToDate(avrosrcDir, "**/*.avpr")
+    boolean uptodate2 = checkSourcesUpToDate(avrosrcDir, "**/*.avsc") 
 
     ant.taskdef(name: "protocol",
-                classname: "org.apache.avro.specific.ProtocolTask",
-                classpathref: "griffon.compile.classpath")
+                classname: "org.apache.avro.compiler.specific.ProtocolTask")
     ant.taskdef(name: "schema",
-                classname: "org.apache.avro.specific.SchemaTask",
-                classpathref: "griffon.compile.classpath")
+                classname: "org.apache.avro.compiler.specific.SchemaTask")
     ant.taskdef(name: "paranamer",
-                classname: "com.thoughtworks.paranamer.ant.ParanamerGeneratorTask",
-                classpathref: "griffon.compile.classpath")
+                classname: "com.thoughtworks.paranamer.ant.ParanamerGeneratorTask")
 
-    ant.protocol(destdir: gensrcDirPath) {
-        fileset(dir: avrosrcDir) {
-            include(name: "**/*.avpr")
+    if(!uptodate1 || !uptodate2) {
+        ant.echo(message: "[avro] Invoking Avro protocol+schema generators on $avrosrc")
+        ant.echo(message: "[avro] Generated sources will be placed in ${gensrcDirPath.absolutePath}")
+
+        ant.protocol(destdir: gensrcDirPath) {
+            fileset(dir: avrosrcDir) {
+                include(name: "**/*.avpr")
+            }
         }
-    }
-    ant.fileset(dir: avrosrcDir, includes: "**/*.avpr").each { avrofile ->
-        File markerFile = new File(gensrcDirPath.absolutePath + File.separator + '.' + (avrofile.toString() - avrosrc).substring(1))
-        ant.touch(file: markerFile)
+        ant.fileset(dir: avrosrcDir, includes: "**/*.avpr").each { avrofile ->
+            File markerFile = new File(gensrcDirPath.absolutePath + File.separator + '.' + (avrofile.toString() - avrosrc).substring(1))
+            ant.touch(file: markerFile)
+        }
+
+        ant.schema(destdir: gensrcDirPath) {
+            fileset(dir: avrosrcDir) {
+                include(name: "**/*.avsc")
+            }
+        }
+        ant.fileset(dir: avrosrcDir, includes: "**/*.avsc").each { avrofile ->
+            File markerFile = new File(gensrcDirPath.absolutePath + File.separator + '.' + (avrofile.toString() - avrosrc).substring(1))
+            ant.touch(file: markerFile)
+        }
+    } else {
+        ant.echo(message: "[avro] Sources are up to date")
     }
 
-    ant.schema(destdir: gensrcDirPath) {
-        fileset(dir: avrosrcDir) {
-            include(name: "**/*.avsc")
-        }
-    }
-    ant.fileset(dir: avrosrcDir, includes: "**/*.avsc").each { avrofile ->
-        File markerFile = new File(gensrcDirPath.absolutePath + File.separator + '.' + (avrofile.toString() - avrosrc).substring(1))
-        ant.touch(file: markerFile)
-    }
-    
-    ant.mkdir(dir: classesDirPath)
-    ant.echo(message: "[avro] Compiling generated sources to $classesDirPath")
+    ant.mkdir(dir: projectMainClassesDir)
+    ant.echo(message: "[avro] Compiling generated sources to $projectMainClassesDir")
     try {
         String classpathId = "griffon.compile.classpath"
-        compileSources(classesDirPath, classpathId) {
+        compileSources(projectMainClassesDir, classpathId) {
             src(path: gensrcDirPath)
             javac(classpathref: classpathId)
         }
         ant.paranamer(sourceDirectory: gensrcDirPath,
-                      outputDirectory: classesDirPath)
-    }
-    catch (Exception e) {
+                      outputDirectory: projectMainClassesDir)
+    } catch (Exception e) {
         event("StatusFinal", ["Compilation error: ${e.message}"])
         ant.fail(message: "[avro] Could not compile generated sources: " + e.class.simpleName + ": " + e.message)
     }
 }
 setDefaultTarget('avro')
+
+checkSourcesUpToDate = { dir, pattern ->
+    boolean uptodate = true
+    def skipIt = new RuntimeException()
+    try {
+        ant.fileset(dir: dir, includes: pattern).each { avrofile ->
+            File markerFile = new File(gensrcDir+File.separator+'gen-java', "." + (avrofile.toString() - avrosrc).substring(1))
+            if(!markerFile.exists() || avrofile.file.lastModified() > markerFile.lastModified()) throw skipIt
+        }
+    } catch(x) {
+       if(x == skipIt) uptodate = false
+       else throw x
+    }
+    uptodate
+}
