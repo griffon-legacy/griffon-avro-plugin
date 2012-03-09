@@ -57,6 +57,11 @@ Place your `.apvr` and/or `.apsc` sources at `$basedir/src/avro`. They will be a
 (and classes) whenever the application is compiled. Alternatively you may call the `avro` command to compile avro
 sources at any time.
 
+Configuration
+-------------
+
+Avro version currently supported is **1.6.1**.
+
 Scripts
 -------
 
