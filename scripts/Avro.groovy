@@ -79,7 +79,7 @@ compileAvroSources = {
     ant.echo(message: "[avro] Compiling generated sources to $projectMainClassesDir")
     try {
         String classpathId = "griffon.compile.classpath"
-        compileProjectSources(griffonSettings.baseDir, projectMainClassesDir, classpathId) {
+        compileProjectSources(projectMainClassesDir, classpathId) {
             src(path: gensrcDirPath)
             javac(classpathref: classpathId)
         }
